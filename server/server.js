@@ -6,9 +6,9 @@ const compression = require('compression');
 
 dotenv.config();
 connectDB();
-app.use(compression());
- 
+
 const app = express();
+app.use(compression());
 
 // FIXED CORS - No wildcard options
 const corsOptions = {
