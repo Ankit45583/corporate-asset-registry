@@ -8,8 +8,8 @@ connectDB();
  
 const app = express();
 
-// FIXED CORS
-app.use(cors({
+// FIXED CORS - No wildcard options
+const corsOptions = {
   origin: [
     'https://corporate-asset-registry.vercel.app',
     'http://localhost:5173',
@@ -19,10 +19,12 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
-}));
+};
 
-// Handle Preflight Requests
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// Handle Preflight - FIXED (no wildcard *)
+app.options(/(.*)/, cors(corsOptions));
 
 app.use(express.json());
 
