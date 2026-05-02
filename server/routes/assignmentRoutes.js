@@ -7,24 +7,28 @@ const {
     deleteAssignment
 } = require('../controllers/assignmentController');
 
-const Assignment = require('../models/Assignment'); // 👈 ADD THIS
+const Assignment = require('../models/Assignment');
 const { protect } = require('../middleware/authMiddleware');
 
-// 🔥 COUNT ROUTE (ACTIVE ONLY)
+// ─── COUNT ROUTE ───────────────────────────────────────────
 router.get('/count', protect, async (req, res) => {
     try {
-        const count = await Assignment.countDocuments();
+        // ✅ Active assignments count - returnDate null matlab active
+        const count = await Assignment.countDocuments({ 
+            returnDate: null 
+        });
         res.json({ count });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Existing routes
+// ─── GET ALL + CREATE ──────────────────────────────────────
 router.route('/')
     .get(protect, getAssignments)
     .post(protect, createAssignment);
 
+// ─── RETURN + DELETE ───────────────────────────────────────
 router.route('/:id')
     .put(protect, returnAsset)
     .delete(protect, deleteAssignment);

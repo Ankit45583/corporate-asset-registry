@@ -3,7 +3,8 @@ const Employee = require('../models/Employee');
 // GET all employees
 const getEmployees = async (req, res) => {
     try {
-        const employees = await Employee.find();
+        const employees = await Employee.find()
+            .lean(); // ✅ faster
         res.json(employees);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -13,7 +14,8 @@ const getEmployees = async (req, res) => {
 // GET single employee
 const getEmployee = async (req, res) => {
     try {
-        const employee = await Employee.findById(req.params.id);
+        const employee = await Employee.findById(req.params.id)
+            .lean(); // ✅ faster
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
         res.json(employee);
     } catch (error) {
@@ -25,6 +27,7 @@ const getEmployee = async (req, res) => {
 const createEmployee = async (req, res) => {
     try {
         const employee = await Employee.create(req.body);
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.status(201).json(employee);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -40,6 +43,7 @@ const updateEmployee = async (req, res) => {
             { new: true }
         );
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.json(employee);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -51,10 +55,17 @@ const deleteEmployee = async (req, res) => {
     try {
         const employee = await Employee.findByIdAndDelete(req.params.id);
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.json({ message: 'Employee deleted' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = { getEmployees, getEmployee, createEmployee, updateEmployee, deleteEmployee };
+module.exports = { 
+    getEmployees, 
+    getEmployee, 
+    createEmployee, 
+    updateEmployee, 
+    deleteEmployee 
+};
