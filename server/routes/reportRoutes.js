@@ -8,171 +8,276 @@ const { protect } = require('../middleware/authMiddleware');
 // ─── GET /api/reports/summary ──────────────────────────────
 router.get('/summary', protect, async (req, res) => {
     try {
-        const assets = await Asset.find();
-        const employees = await Employee.find();
 
-        // ✅ Assignment populate karo taaki asset/employee name mile
-        const assignments = await Assignment.find()
-            .populate('asset', 'name category cost status')
-            .populate('employee', 'name department');
+        // ✅ FIX 1: Sab queries PARALLEL chalao - Promise.all
+        // Pehle: Sequential tha = Query1 + Query2 + Query3 ka time
+        // Ab: Parallel = sirf sabse slow query ka time
+        const [
+            totalAssets,
+            totalEmployees,
+            activeAssignments,
+            valueResult,
+            statusCounts,
+            categoryResult,
+            recentAssignments,
+            maintenanceAssets,
+            retiredAssets,
+            recentEmployees,
+            monthlyAssets,
+            monthlyAssignments,
+        ] = await Promise.all([
 
-        // ─── Basic Stats ───────────────────────────────────
-        const totalAssets = assets.length;
-        const totalEmployees = employees.length;
-        const totalAssignments = assignments.length;
+            // ✅ FIX 2: countDocuments use karo - find() mat karo
+            // Pehle: Asset.find() = poora data load
+            // Ab: sirf count return hoga
+            Asset.countDocuments(),
+            Employee.countDocuments(),
+            Assignment.countDocuments({ returnDate: null }),
 
-        // ✅ Active assignments - returnDate nahi hai matlab active
-        const activeAssignments = assignments.filter(
-            (a) => !a.returnDate
-        ).length;
+            // ✅ FIX 3: Aggregation DB me karo - JS me nahi
+            // Total value
+            Asset.aggregate([
+                { $group: { _id: null, total: { $sum: '$cost' } } }
+            ]),
 
-        // ─── Value ────────────────────────────────────────
-        const totalValue = assets.reduce(
-            (sum, a) => sum + (a.cost || a.price || 0),
-            0
-        );
-        const avgValue = totalAssets > 0 ? totalValue / totalAssets : 0;
+            // ✅ Status counts - ek hi aggregation se sab
+            // Pehle: 4 alag filter JS me
+            // Ab: 1 DB query se sab
+            Asset.aggregate([
+                {
+                    $group: {
+                        _id: '$status',
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
 
-        // ─── Status counts ────────────────────────────────
-        const assignedCount = assets.filter(
-            (a) => a.status === 'assigned'
-        ).length;
-        const availableCount = assets.filter(
-            (a) => a.status === 'available'
-        ).length;
-        const maintenanceCount = assets.filter(
-            (a) => a.status === 'maintenance'
-        ).length;
-        const retiredCount = assets.filter(
-            (a) => a.status === 'retired'
-        ).length;
+            // Category data
+            Asset.aggregate([
+                {
+                    $group: {
+                        _id: '$category',
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
 
-        // ─── Utilization Rate ─────────────────────────────
-        const utilizationRate =
-            totalAssets > 0
-                ? ((assignedCount / totalAssets) * 100).toFixed(1)
-                : '0.0';
+            // ✅ FIX 4: Sirf zaruri fields lo - populate kam karo
+            // Recent assignments - sirf 3 chahiye
+            Assignment.find({ returnDate: null })
+                .sort({ createdAt: -1 })
+                .limit(3)
+                .populate('asset', 'name')        // sirf name
+                .populate('employee', 'name')      // sirf name
+                .lean(),                           // ✅ lean() = faster
 
-        // ─── Category Data ────────────────────────────────
-        const categoryData = {};
-        assets.forEach((asset) => {
-            const cat = asset.category || 'other';
-            categoryData[cat] = (categoryData[cat] || 0) + 1;
+            // Maintenance assets - sirf 2
+            Asset.find({ status: 'maintenance' })
+                .select('name updatedAt createdAt')  // sirf ye fields
+                .sort({ updatedAt: -1 })
+                .limit(2)
+                .lean(),
+
+            // Retired assets - sirf 1
+            Asset.find({ status: 'retired' })
+                .select('name updatedAt createdAt')
+                .sort({ updatedAt: -1 })
+                .limit(1)
+                .lean(),
+
+            // Recent employees - sirf 2
+            Employee.find()
+                .select('name createdAt')
+                .sort({ createdAt: -1 })
+                .limit(2)
+                .lean(),
+
+            // ✅ FIX 5: Monthly data DB se lo - JS loop nahi
+            // Last 6 months assets
+            Asset.aggregate([
+                {
+                    $match: {
+                        $or: [
+                            { purchaseDate: { 
+                                $gte: new Date(
+                                    new Date().setMonth(
+                                        new Date().getMonth() - 6
+                                    )
+                                ) 
+                            }},
+                            { createdAt: { 
+                                $gte: new Date(
+                                    new Date().setMonth(
+                                        new Date().getMonth() - 6
+                                    )
+                                ) 
+                            }}
+                        ]
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            month: {
+                                $month: {
+                                    $ifNull: ['$purchaseDate', '$createdAt']
+                                }
+                            },
+                            year: {
+                                $year: {
+                                    $ifNull: ['$purchaseDate', '$createdAt']
+                                }
+                            }
+                        },
+                        count: { $sum: 1 },
+                        cost: { $sum: { $ifNull: ['$cost', 0] } },
+                        available: {
+                            $sum: {
+                                $cond: [
+                                    { $eq: ['$status', 'available'] },
+                                    1,
+                                    0
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]),
+
+            // Last 6 months assignments
+            Assignment.aggregate([
+                {
+                    $match: {
+                        $or: [
+                            { assignDate: { 
+                                $gte: new Date(
+                                    new Date().setMonth(
+                                        new Date().getMonth() - 6
+                                    )
+                                ) 
+                            }},
+                            { createdAt: { 
+                                $gte: new Date(
+                                    new Date().setMonth(
+                                        new Date().getMonth() - 6
+                                    )
+                                ) 
+                            }}
+                        ]
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            month: {
+                                $month: {
+                                    $ifNull: ['$assignDate', '$createdAt']
+                                }
+                            },
+                            year: {
+                                $year: {
+                                    $ifNull: ['$assignDate', '$createdAt']
+                                }
+                            }
+                        },
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+        ]);
+
+        // ─── Process Status Counts ─────────────────────────
+        // DB se aaya grouped result process karo
+        const statusMap = {};
+        statusCounts.forEach(s => {
+            statusMap[s._id] = s.count;
         });
 
-        // ─── Monthly Data - Last 6 Months ─────────────────
+        const assignedCount    = statusMap['assigned']    || 0;
+        const availableCount   = statusMap['available']   || 0;
+        const maintenanceCount = statusMap['maintenance'] || 0;
+        const retiredCount     = statusMap['retired']     || 0;
+
+        // ─── Process Category Data ─────────────────────────
+        const categoryData = {};
+        categoryResult.forEach(c => {
+            if (c._id) categoryData[c._id] = c.count;
+        });
+
+        // ─── Process Monthly Data ──────────────────────────
+        const monthNames = [
+            'Jan','Feb','Mar','Apr','May','Jun',
+            'Jul','Aug','Sep','Oct','Nov','Dec'
+        ];
+
+        // Asset monthly map
+        const assetMonthMap = {};
+        monthlyAssets.forEach(item => {
+            const key = `${item._id.year}-${item._id.month}`;
+            assetMonthMap[key] = {
+                count: item.count,
+                cost: item.cost,
+                available: item.available
+            };
+        });
+
+        // Assignment monthly map
+        const assignMonthMap = {};
+        monthlyAssignments.forEach(item => {
+            const key = `${item._id.year}-${item._id.month}`;
+            assignMonthMap[key] = item.count;
+        });
+
+        // Build last 6 months array
         const monthlyData = [];
         for (let i = 5; i >= 0; i--) {
             const date = new Date();
             date.setMonth(date.getMonth() - i);
-            const month = date.toLocaleString('default', {
-                month: 'short',
-            });
-            const year = date.getFullYear();
-            const monthNum = date.getMonth();
+            const month = monthNames[date.getMonth()];
+            const year  = date.getFullYear();
+            const key   = `${year}-${date.getMonth() + 1}`;
 
-            // ✅ purchaseDate ya createdAt dono check karo
-            const monthAssets = assets.filter((a) => {
-                const dateToCheck = a.purchaseDate || a.createdAt;
-                if (!dateToCheck) return false;
-                const d = new Date(dateToCheck);
-                return (
-                    d.getMonth() === monthNum &&
-                    d.getFullYear() === year
-                );
-            });
-
-            // ✅ assignDate ya createdAt dono check karo
-            const monthAssignments = assignments.filter((a) => {
-                const dateToCheck = a.assignDate || a.createdAt;
-                if (!dateToCheck) return false;
-                const d = new Date(dateToCheck);
-                return (
-                    d.getMonth() === monthNum &&
-                    d.getFullYear() === year
-                );
-            });
-
-            const assetCount = monthAssets.length;
-            const cost = monthAssets.reduce(
-                (sum, a) => sum + (a.cost || a.price || 0),
-                0
-            );
-            const assigned = monthAssignments.length;
-            const available = monthAssets.filter(
-                (a) => a.status === 'available'
-            ).length;
+            const assetInfo = assetMonthMap[key] || {
+                count: 0, cost: 0, available: 0
+            };
 
             monthlyData.push({
                 month,
-                assets: assetCount,
-                cost,
-                assigned,
-                available,
+                assets:    assetInfo.count,
+                cost:      assetInfo.cost,
+                assigned:  assignMonthMap[key] || 0,
+                available: assetInfo.available,
             });
         }
 
-        // ─── Recent Activity ───────────────────────────────
+        // ─── Build Recent Activity ─────────────────────────
         const recentActivity = [];
 
-        // Latest assignments (last 3)
-        const recentAssignments = [...assignments]
-            .sort(
-                (a, b) =>
-                    new Date(b.assignDate || b.createdAt) -
-                    new Date(a.assignDate || a.createdAt)
-            )
-            .slice(0, 3);
-
-        recentAssignments.forEach((assign) => {
+        recentAssignments.forEach(assign => {
             recentActivity.push({
-                text: `<strong>${
-                    assign.asset?.name || 'Asset'
-                }</strong> assigned to ${
-                    assign.employee?.name || 'Employee'
-                }`,
+                text: `<strong>${assign.asset?.name || 'Asset'}</strong> assigned to ${assign.employee?.name || 'Employee'}`,
                 time: getTimeAgo(assign.assignDate || assign.createdAt),
                 type: 'primary',
             });
         });
 
-        // Maintenance assets
-        assets
-            .filter((a) => a.status === 'maintenance')
-            .slice(0, 2)
-            .forEach((asset) => {
-                recentActivity.push({
-                    text: `<strong>${asset.name}</strong> sent for maintenance`,
-                    time: getTimeAgo(
-                        asset.updatedAt || asset.createdAt
-                    ),
-                    type: 'warning',
-                });
+        maintenanceAssets.forEach(asset => {
+            recentActivity.push({
+                text: `<strong>${asset.name}</strong> sent for maintenance`,
+                time: getTimeAgo(asset.updatedAt || asset.createdAt),
+                type: 'warning',
             });
+        });
 
-        // Retired assets
-        assets
-            .filter((a) => a.status === 'retired')
-            .slice(0, 1)
-            .forEach((asset) => {
-                recentActivity.push({
-                    text: `<strong>${asset.name}</strong> marked as retired`,
-                    time: getTimeAgo(
-                        asset.updatedAt || asset.createdAt
-                    ),
-                    type: 'danger',
-                });
+        retiredAssets.forEach(asset => {
+            recentActivity.push({
+                text: `<strong>${asset.name}</strong> marked as retired`,
+                time: getTimeAgo(asset.updatedAt || asset.createdAt),
+                type: 'danger',
             });
+        });
 
-        // New employees (last 2)
-        const recentEmployees = [...employees]
-            .sort(
-                (a, b) =>
-                    new Date(b.createdAt) - new Date(a.createdAt)
-            )
-            .slice(0, 2);
-
-        recentEmployees.forEach((emp) => {
+        recentEmployees.forEach(emp => {
             recentActivity.push({
                 text: `<strong>${emp.name}</strong> added to system`,
                 time: getTimeAgo(emp.createdAt),
@@ -180,22 +285,29 @@ router.get('/summary', protect, async (req, res) => {
             });
         });
 
+        // ─── Final Response ────────────────────────────────
+        const totalValue      = valueResult[0]?.total || 0;
+        const utilizationRate = totalAssets > 0
+            ? ((assignedCount / totalAssets) * 100).toFixed(1)
+            : '0.0';
+
         res.json({
             totalAssets,
             totalEmployees,
-            totalAssignments,
-            activeAssignments,   // ✅ Correct field
+            totalAssignments:  totalAssets,
+            activeAssignments,
             assignedCount,
             availableCount,
             maintenanceCount,
             retiredCount,
             totalValue,
-            avgValue,
+            avgValue: totalAssets > 0 ? totalValue / totalAssets : 0,
             utilizationRate,
             categoryData,
             monthlyData,
             recentActivity: recentActivity.slice(0, 5),
         });
+
     } catch (err) {
         console.error('Summary error:', err);
         res.status(500).json({ message: err.message });
@@ -205,45 +317,69 @@ router.get('/summary', protect, async (req, res) => {
 // ─── GET /api/reports/departments ─────────────────────────
 router.get('/departments', protect, async (req, res) => {
     try {
-        const employees = await Employee.find();
 
-        // ✅ Assignments se asset count nikalo
-        const assignments = await Assignment.find()
-            .populate('employee', 'department');
+        // ✅ FIX: Parallel + aggregation DB me
+        const [deptEmployees, deptAssets] = await Promise.all([
 
+            Employee.aggregate([
+                {
+                    $group: {
+                        _id: '$department',
+                        employees: { $sum: 1 }
+                    }
+                }
+            ]),
+
+            Assignment.aggregate([
+                {
+                    $lookup: {
+                        from: 'employees',
+                        localField: 'employee',
+                        foreignField: '_id',
+                        as: 'emp'
+                    }
+                },
+                { $unwind: '$emp' },
+                {
+                    $group: {
+                        _id: '$emp.department',
+                        assets: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        // Merge results
         const deptMap = {};
 
-        employees.forEach((emp) => {
-            const dept = emp.department || 'Unknown';
-            if (!deptMap[dept]) {
-                deptMap[dept] = { employees: 0, assets: 0 };
-            }
-            deptMap[dept].employees += 1;
+        deptEmployees.forEach(d => {
+            deptMap[d._id || 'Unknown'] = {
+                employees: d.employees,
+                assets: 0
+            };
         });
 
-        // ✅ Assignment se asset count
-        assignments.forEach((assign) => {
-            const dept =
-                assign.employee?.department || 'Unknown';
+        deptAssets.forEach(d => {
+            const dept = d._id || 'Unknown';
             if (!deptMap[dept]) {
                 deptMap[dept] = { employees: 0, assets: 0 };
             }
-            deptMap[dept].assets += 1;
+            deptMap[dept].assets = d.assets;
         });
 
         const result = Object.entries(deptMap).map(
             ([department, data]) => ({
                 department,
                 employees: data.employees,
-                assets: data.assets,
-                avgPerEmployee:
-                    data.employees > 0
-                        ? (data.assets / data.employees).toFixed(1)
-                        : '0',
+                assets:    data.assets,
+                avgPerEmployee: data.employees > 0
+                    ? (data.assets / data.employees).toFixed(1)
+                    : '0',
             })
         );
 
         res.json(result);
+
     } catch (err) {
         console.error('Department report error:', err);
         res.status(500).json({ message: err.message });
@@ -253,15 +389,14 @@ router.get('/departments', protect, async (req, res) => {
 // ─── Helper: Time ago ──────────────────────────────────────
 const getTimeAgo = (dateStr) => {
     if (!dateStr) return 'Recently';
-    const now = new Date();
+    const now  = new Date();
     const date = new Date(dateStr);
     const diff = Math.floor((now - date) / 1000);
 
-    if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
-    if (diff < 604800)
-        return `${Math.floor(diff / 86400)} days ago`;
+    if (diff < 60)     return 'Just now';
+    if (diff < 3600)   return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400)  return `${Math.floor(diff / 3600)} hours ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)} days ago`;
     return date.toLocaleDateString('en-IN');
 };
 

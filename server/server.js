@@ -2,9 +2,11 @@ const express = require('express');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');   
 const cors = require('cors');
+const compression = require('compression');
 
 dotenv.config();
 connectDB();
+app.use(compression());
  
 const app = express();
 
@@ -18,7 +20,8 @@ const corsOptions = {
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
+  credentials: true,
+  maxAge:86400
 };
 
 app.use(cors(corsOptions));
