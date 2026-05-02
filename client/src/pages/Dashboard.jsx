@@ -21,9 +21,11 @@ import {
 import { formatCurrency } from '../utils/constants';
 import toast from 'react-hot-toast';
 import '../styles/dashboard.css';
+import { useNotifications } from '../context/NotificationContext';
 
 const Dashboard = () => {
     const navigate = useNavigate();
+    const { fetchNotifications } = useNotifications();
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -39,14 +41,15 @@ const Dashboard = () => {
 
             const data = await getSummary();
             setSummary(data);
+
+            // ✅ Summary data se notifications build karo
+            // Koi extra API call nahi hogi
+            fetchNotifications(data);
+
         } catch (error) {
-            console.log(
-                'DASHBOARD ERROR:',
-                error.response?.data || error.message
-            );
+            console.log('DASHBOARD ERROR:', error.response?.data || error.message);
             toast.error(
-                error.response?.data?.message ||
-                    'Failed to load dashboard data'
+                error.response?.data?.message || 'Failed to load dashboard data'
             );
         } finally {
             setLoading(false);
