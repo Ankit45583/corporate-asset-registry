@@ -3,7 +3,9 @@ const Asset = require('../models/Asset');
 // GET all assets
 const getAssets = async (req, res) => {
     try {
-        const assets = await Asset.find().populate('assignedTo', 'name email');
+        const assets = await Asset.find()
+            .populate('assignedTo', 'name email')
+            .lean(); // ✅ faster
         res.json(assets);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -13,7 +15,9 @@ const getAssets = async (req, res) => {
 // GET single asset
 const getAsset = async (req, res) => {
     try {
-        const asset = await Asset.findById(req.params.id).populate('assignedTo', 'name email');
+        const asset = await Asset.findById(req.params.id)
+            .populate('assignedTo', 'name email')
+            .lean(); // ✅ faster
         if (!asset) return res.status(404).json({ message: 'Asset not found' });
         res.json(asset);
     } catch (error) {
@@ -25,6 +29,7 @@ const getAsset = async (req, res) => {
 const createAsset = async (req, res) => {
     try {
         const asset = await Asset.create(req.body);
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.status(201).json(asset);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -40,6 +45,7 @@ const updateAsset = async (req, res) => {
             { new: true }
         );
         if (!asset) return res.status(404).json({ message: 'Asset not found' });
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.json(asset);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -51,10 +57,17 @@ const deleteAsset = async (req, res) => {
     try {
         const asset = await Asset.findByIdAndDelete(req.params.id);
         if (!asset) return res.status(404).json({ message: 'Asset not found' });
+        req.app.locals.cache.clear(); // ✅ Cache clear
         res.json({ message: 'Asset deleted' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = { getAssets, getAsset, createAsset, updateAsset, deleteAsset };
+module.exports = { 
+    getAssets, 
+    getAsset, 
+    createAsset, 
+    updateAsset, 
+    deleteAsset 
+};

@@ -1,9 +1,8 @@
-import { 
-    createContext, 
-    useContext, 
-    useState, 
-    useEffect, 
-    useCallback 
+import {
+    createContext,
+    useContext,
+    useState,
+    useCallback
 } from "react";
 
 const NotificationContext = createContext();
@@ -51,9 +50,8 @@ export const NotificationProvider = ({ children }) => {
         return date.toLocaleDateString();
     };
 
-    // ✅ FIX: API calls bilkul nahi
-    // Summary data bahar se inject hoga
-    const buildNotificationsFromSummary = useCallback((summaryData) => {
+    // ✅ NO API CALLS - Summary data se build karo
+    const fetchNotifications = useCallback((summaryData) => {
         if (!summaryData) return;
 
         try {
@@ -61,14 +59,14 @@ export const NotificationProvider = ({ children }) => {
             const raw = [];
             let id = 1;
 
-            // ✅ recentActivity summary me pehle se hai
+            // ✅ Recent activity summary me pehle se hai
             if (summaryData.recentActivity?.length > 0) {
                 summaryData.recentActivity.forEach((act) => {
                     raw.push({
                         id: id++,
-                        type: act.type === 'primary' ? 'asset' 
-                            : act.type === 'warning' ? 'maintenance' 
-                            : act.type === 'danger' ? 'asset' 
+                        type: act.type === 'primary' ? 'asset'
+                            : act.type === 'warning' ? 'maintenance'
+                            : act.type === 'danger' ? 'asset'
                             : 'asset',
                         variant: act.type === 'primary' ? 'success'
                             : act.type === 'warning' ? 'warning'
@@ -78,6 +76,7 @@ export const NotificationProvider = ({ children }) => {
                             : act.type === 'warning' ? 'Maintenance Required'
                             : act.type === 'danger' ? 'Asset Retired'
                             : 'Update',
+                        // HTML tags remove karo
                         message: act.text.replace(/<[^>]*>/g, ''),
                         time: act.time,
                         read: false,
@@ -89,7 +88,7 @@ export const NotificationProvider = ({ children }) => {
                 });
             }
 
-            // ✅ Maintenance count summary se
+            // ✅ Maintenance count
             if (summaryData.maintenanceCount > 0) {
                 raw.push({
                     id: id++,
@@ -103,7 +102,7 @@ export const NotificationProvider = ({ children }) => {
                 });
             }
 
-            // ✅ Available assets summary se
+            // ✅ Available assets
             if (summaryData.availableCount > 0) {
                 raw.push({
                     id: id++,
@@ -117,7 +116,7 @@ export const NotificationProvider = ({ children }) => {
                 });
             }
 
-            // ✅ Retired count summary se
+            // ✅ Retired count
             if (summaryData.retiredCount > 0) {
                 raw.push({
                     id: id++,
@@ -151,21 +150,15 @@ export const NotificationProvider = ({ children }) => {
         }
     }, []);
 
-    // ✅ Ye function Dashboard call karega
-    // Koi extra API call nahi hogi
-    const fetchNotifications = useCallback((summaryData) => {
-        buildNotificationsFromSummary(summaryData);
-    }, [buildNotificationsFromSummary]);
-
     // ─── Filtered notifications ───────────────────────────
     const notifications = (() => {
         if (!settings.pushNotif) return [];
         return allNotifications.filter((notif) => {
-            if (notif.type === "asset" && !settings.assetAlerts) 
+            if (notif.type === "asset" && !settings.assetAlerts)
                 return false;
-            if (notif.type === "maintenance" && !settings.maintenanceAlerts) 
+            if (notif.type === "maintenance" && !settings.maintenanceAlerts)
                 return false;
-            if (notif.type === "report" && !settings.reportAlerts) 
+            if (notif.type === "report" && !settings.reportAlerts)
                 return false;
             return true;
         });
@@ -181,7 +174,7 @@ export const NotificationProvider = ({ children }) => {
     }, []);
 
     const markAllRead = useCallback(() => {
-        setAllNotifications((prev) => 
+        setAllNotifications((prev) =>
             prev.map((n) => ({ ...n, read: true }))
         );
     }, []);
@@ -190,12 +183,12 @@ export const NotificationProvider = ({ children }) => {
         setAllNotifications([]);
     }, []);
 
-    // ─── Settings actions ─────────────────────────────────
+    // ─── Settings ─────────────────────────────────────────
     const toggleSetting = useCallback((key) => {
         setSettings((prev) => {
             const updated = { ...prev, [key]: !prev[key] };
             localStorage.setItem(
-                "notification_settings", 
+                "notification_settings",
                 JSON.stringify(updated)
             );
             return updated;
@@ -205,7 +198,7 @@ export const NotificationProvider = ({ children }) => {
     const saveSettings = useCallback((newSettings) => {
         setSettings(newSettings);
         localStorage.setItem(
-            "notification_settings", 
+            "notification_settings",
             JSON.stringify(newSettings)
         );
     }, []);
@@ -221,7 +214,7 @@ export const NotificationProvider = ({ children }) => {
         };
         setSettings(defaults);
         localStorage.setItem(
-            "notification_settings", 
+            "notification_settings",
             JSON.stringify(defaults)
         );
     }, []);
@@ -232,7 +225,7 @@ export const NotificationProvider = ({ children }) => {
             settings,
             loading,
             unreadCount,
-            fetchNotifications,  // ✅ Ab ye summaryData leta hai
+            fetchNotifications,
             markAsRead,
             markAllRead,
             clearNotifications,
