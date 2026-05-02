@@ -74,8 +74,8 @@ const AppRoutes = () => {
 function App() {
     return (
         <BrowserRouter>
+            {/* ✅ Sirf ek jagah sab providers */}
             <AuthProvider>
-                {/* ✅ NotificationProvider AuthProvider ke andar */}
                 <NotificationProvider>
                     <AppRoutes />
                     <Toaster

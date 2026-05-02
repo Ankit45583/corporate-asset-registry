@@ -14,7 +14,7 @@ import "./styles/assignments.css";
 import "./styles/profile.css";
 import "./styles/navbar.css";
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
+  
     <App />
-  </React.StrictMode>
+ 
 );
