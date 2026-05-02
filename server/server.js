@@ -8,24 +8,34 @@ connectDB();
  
 const app = express();
 
+// FIXED CORS
 app.use(cors({
-  origin: process.env.CLIENT_URL,
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: [
+    'https://corporate-asset-registry.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5000'
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
+
+// Handle Preflight Requests
+app.options('*', cors());
+
 app.use(express.json());
 
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/assets', require('./routes/assetRoutes')); // ✅ FIXED
+app.use('/api/assets', require('./routes/assetRoutes'));
 app.use('/api/employees', require('./routes/employeeRoutes'));
 app.use('/api/assignments', require('./routes/assignmentRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
 
-
 app.get('/', (req, res) => {
     res.send("server is running");
 });
-// ✅ Temporarily add karo routes se pehle
+
 app.post('/api/test', async (req, res) => {
     console.log('Test body:', req.body);
     res.json({ received: req.body });
